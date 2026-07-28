@@ -1,6 +1,6 @@
 {
-  "versionName": "1.3.0",
-  "versionCode": 4,
-  "apkUrl": "https://github.com/balakrishna152002-gif/wardrobeai/releases/download/v1.3.0/app-release.apk",
-  "notes": "Outfit generator now asks Men/Women before generating and only picks from matching + unisex items in your wardrobe."
+  "versionName": "1.3.1",
+  "versionCode": 5,
+  "apkUrl": "https://github.com/balakrishna152002-gif/wardrobeai/releases/download/v1.3.1/app-arm64-v8a-release.apk",
+  "notes": "Wardrobe management (archive, duplicate detection, multiple photos per item), Outfit History with wear stats and mark-as-worn, AI Outfit Score, One-Tap Match, and a much smaller download (33MB vs 86MB)."
 }
