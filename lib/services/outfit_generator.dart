@@ -50,15 +50,24 @@ class OutfitGeneratorService {
     }
   }
 
+  static List<ClothingItem> _forGender(List<ClothingItem> items, ClothingGender gender) {
+    return items
+        .where((i) => i.gender == gender || i.gender == ClothingGender.unisex)
+        .toList();
+  }
+
   /// Tries the cloud AI stylist first for a reasoned outfit pick; falls
   /// back to the local colour-harmony heuristic if the AI is unavailable
   /// (offline, endpoint down) or returns something that doesn't check out
   /// against the actual wardrobe.
-  static Future<GeneratedOutfit> generateSmart(Occasion occasion) async {
-    final all = await DatabaseHelper.instance.getAllClothingItems();
+  static Future<GeneratedOutfit> generateSmart(
+    Occasion occasion,
+    ClothingGender gender,
+  ) async {
+    final all = _forGender(await DatabaseHelper.instance.getAllClothingItems(), gender);
     if (all.isEmpty) {
       throw NotEnoughItemsException(
-        'Add at least one top or dress to generate an outfit.',
+        'Add at least one ${gender.label.toLowerCase()} or unisex top to generate an outfit.',
       );
     }
 
@@ -78,11 +87,11 @@ class OutfitGeneratorService {
       }
     }
 
-    return generate(occasion);
+    return generate(occasion, gender);
   }
 
-  static Future<GeneratedOutfit> generate(Occasion occasion) async {
-    final all = await DatabaseHelper.instance.getAllClothingItems();
+  static Future<GeneratedOutfit> generate(Occasion occasion, ClothingGender gender) async {
+    final all = _forGender(await DatabaseHelper.instance.getAllClothingItems(), gender);
     final recentOutfits = await DatabaseHelper.instance.getAllOutfits();
     final recentSignatures = recentOutfits
         .take(_recentComboCheckCount)
@@ -103,7 +112,7 @@ class OutfitGeneratorService {
     final topCandidates = preferStyle(byCategories(WardrobeCategoryX.topSlot));
     if (topCandidates.isEmpty) {
       throw NotEnoughItemsException(
-        'Add at least one top or dress to generate an outfit.',
+        'Add at least one ${gender.label.toLowerCase()} or unisex top to generate an outfit.',
       );
     }
 

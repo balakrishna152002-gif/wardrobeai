@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../db/database_helper.dart';
+import '../models/clothing_item.dart';
 import '../models/outfit.dart';
 import '../models/outfit_history.dart';
 import '../services/outfit_generator.dart';
@@ -14,11 +16,29 @@ class OutfitGeneratorScreen extends StatefulWidget {
 }
 
 class _OutfitGeneratorScreenState extends State<OutfitGeneratorScreen> {
+  static const _genderPrefKey = 'profile_gender';
+
   Occasion _occasion = Occasion.casual;
+  ClothingGender _gender = ClothingGender.women;
   GeneratedOutfit? _outfit;
   bool _loading = false;
   String? _error;
   bool _savedThisOutfit = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDefaultGender();
+  }
+
+  Future<void> _loadDefaultGender() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_genderPrefKey);
+    if (saved == null || !mounted) return;
+    final match = ClothingGender.values.where((g) => g.name == saved);
+    if (match.isEmpty || match.first == ClothingGender.unisex) return;
+    setState(() => _gender = match.first);
+  }
 
   Future<void> _generate() async {
     setState(() {
@@ -26,7 +46,7 @@ class _OutfitGeneratorScreenState extends State<OutfitGeneratorScreen> {
       _error = null;
     });
     try {
-      final outfit = await OutfitGeneratorService.generateSmart(_occasion);
+      final outfit = await OutfitGeneratorService.generateSmart(_occasion, _gender);
       setState(() {
         _outfit = outfit;
         _savedThisOutfit = false;
@@ -73,6 +93,18 @@ class _OutfitGeneratorScreenState extends State<OutfitGeneratorScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final g in [ClothingGender.women, ClothingGender.men])
+                  ChoiceChip(
+                    label: Text(g.label),
+                    selected: _gender == g,
+                    onSelected: (_) => setState(() => _gender = g),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               children: [
