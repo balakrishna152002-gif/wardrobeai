@@ -4,6 +4,7 @@ import '../db/database_helper.dart';
 import '../models/clothing_item.dart';
 import '../models/outfit.dart';
 import '../widgets/outfit_slot_card.dart';
+import 'outfit_history_screen.dart';
 
 class SavedOutfitsScreen extends StatefulWidget {
   const SavedOutfitsScreen({super.key});
@@ -38,7 +39,20 @@ class _SavedOutfitsScreenState extends State<SavedOutfitsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Saved Outfits')),
+      appBar: AppBar(
+        title: const Text('Saved Outfits'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: 'Outfit history',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const OutfitHistoryScreen()),
+              );
+            },
+          ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _reload,
         child: FutureBuilder<List<Outfit>>(

@@ -48,6 +48,7 @@ class ClothingItem {
   final ClothingGender gender;
   final String brand;
   final bool favourite;
+  final bool archived;
   final DateTime dateAdded;
 
   const ClothingItem({
@@ -62,6 +63,7 @@ class ClothingItem {
     this.gender = ClothingGender.unisex,
     this.brand = '',
     this.favourite = false,
+    this.archived = false,
     required this.dateAdded,
   });
 
@@ -77,6 +79,7 @@ class ClothingItem {
     ClothingGender? gender,
     String? brand,
     bool? favourite,
+    bool? archived,
     DateTime? dateAdded,
   }) {
     return ClothingItem(
@@ -91,6 +94,7 @@ class ClothingItem {
       gender: gender ?? this.gender,
       brand: brand ?? this.brand,
       favourite: favourite ?? this.favourite,
+      archived: archived ?? this.archived,
       dateAdded: dateAdded ?? this.dateAdded,
     );
   }
@@ -108,6 +112,7 @@ class ClothingItem {
       'gender': gender.name,
       'brand': brand,
       'favourite': favourite ? 1 : 0,
+      'archived': archived ? 1 : 0,
       'date_added': dateAdded.toIso8601String(),
     };
   }
@@ -134,6 +139,7 @@ class ClothingItem {
       ),
       brand: map['brand'] as String? ?? '',
       favourite: (map['favourite'] as int? ?? 0) == 1,
+      archived: (map['archived'] as int? ?? 0) == 1,
       dateAdded: DateTime.parse(map['date_added'] as String),
     );
   }

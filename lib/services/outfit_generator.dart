@@ -14,6 +14,9 @@ class GeneratedOutfit {
   final Occasion occasion;
   final String? aiReasoning;
 
+  /// 0-100 "wearability" score - colour harmony and occasion/style fit.
+  final int score;
+
   const GeneratedOutfit({
     required this.top,
     this.bottom,
@@ -21,6 +24,7 @@ class GeneratedOutfit {
     this.accessory,
     required this.occasion,
     this.aiReasoning,
+    required this.score,
   });
 
   bool get isFromAi => aiReasoning != null;
@@ -59,11 +63,16 @@ class OutfitGeneratorService {
   /// Tries the cloud AI stylist first for a reasoned outfit pick; falls
   /// back to the local colour-harmony heuristic if the AI is unavailable
   /// (offline, endpoint down) or returns something that doesn't check out
-  /// against the actual wardrobe.
+  /// against the actual wardrobe. When [anchor] is set (One-Tap Match), the
+  /// AI path is skipped in favour of the local heuristic, which pins the
+  /// anchor into its slot and matches everything else around it.
   static Future<GeneratedOutfit> generateSmart(
     Occasion occasion,
-    ClothingGender gender,
-  ) async {
+    ClothingGender gender, {
+    ClothingItem? anchor,
+  }) async {
+    if (anchor != null) return generate(occasion, gender, anchor: anchor);
+
     final all = _forGender(await DatabaseHelper.instance.getAllClothingItems(), gender);
     if (all.isEmpty) {
       throw NotEnoughItemsException(
@@ -76,13 +85,18 @@ class OutfitGeneratorService {
       final byId = {for (final i in all) i.id: i};
       final top = byId[suggestion.topId];
       if (top != null && WardrobeCategoryX.topSlot.contains(top.category)) {
+        final bottom = byId[suggestion.bottomId];
+        final shoe = byId[suggestion.shoeId];
+        final accessory = byId[suggestion.accessoryId];
         return GeneratedOutfit(
           top: top,
-          bottom: byId[suggestion.bottomId],
-          shoe: byId[suggestion.shoeId],
-          accessory: byId[suggestion.accessoryId],
+          bottom: bottom,
+          shoe: shoe,
+          accessory: accessory,
           occasion: occasion,
           aiReasoning: suggestion.reasoning,
+          score: suggestion.score ??
+              _computeScore([top, bottom, shoe, accessory], _desiredStyleFor(occasion)),
         );
       }
     }
@@ -90,7 +104,11 @@ class OutfitGeneratorService {
     return generate(occasion, gender);
   }
 
-  static Future<GeneratedOutfit> generate(Occasion occasion, ClothingGender gender) async {
+  static Future<GeneratedOutfit> generate(
+    Occasion occasion,
+    ClothingGender gender, {
+    ClothingItem? anchor,
+  }) async {
     final all = _forGender(await DatabaseHelper.instance.getAllClothingItems(), gender);
     final recentOutfits = await DatabaseHelper.instance.getAllOutfits();
     final recentSignatures = recentOutfits
@@ -99,6 +117,7 @@ class OutfitGeneratorService {
         .toSet();
 
     final desiredStyle = _desiredStyleFor(occasion);
+    final anchorSlot = anchor?.category.outfitSlot;
 
     List<ClothingItem> byCategories(List<WardrobeCategory> cats) =>
         all.where((i) => cats.contains(i.category)).toList();
@@ -110,7 +129,7 @@ class OutfitGeneratorService {
     }
 
     final topCandidates = preferStyle(byCategories(WardrobeCategoryX.topSlot));
-    if (topCandidates.isEmpty) {
+    if (topCandidates.isEmpty && anchorSlot != OutfitSlot.top) {
       throw NotEnoughItemsException(
         'Add at least one ${gender.label.toLowerCase()} or unisex top to generate an outfit.',
       );
@@ -125,21 +144,33 @@ class OutfitGeneratorService {
     ]);
 
     GeneratedOutfit build() {
-      final top = topCandidates[_random.nextInt(topCandidates.length)];
-      final worn = <String>[top.colour];
+      final worn = <String>[if (anchor != null) anchor.colour];
+
+      final top = anchorSlot == OutfitSlot.top
+          ? anchor!
+          : topCandidates[_random.nextInt(topCandidates.length)];
+      if (anchorSlot != OutfitSlot.top) worn.add(top.colour);
 
       ClothingItem? bottom;
-      if (top.category != WardrobeCategory.dresses && bottomCandidates.isNotEmpty) {
+      if (anchorSlot == OutfitSlot.bottom) {
+        bottom = anchor;
+      } else if (top.category != WardrobeCategory.dresses && bottomCandidates.isNotEmpty) {
         bottom = _pickBestMatch(bottomCandidates, worn);
         worn.add(bottom.colour);
       }
 
-      final shoe =
-          shoeCandidates.isEmpty ? null : _pickBestMatch(shoeCandidates, worn);
-      if (shoe != null) worn.add(shoe.colour);
+      ClothingItem? shoe;
+      if (anchorSlot == OutfitSlot.shoe) {
+        shoe = anchor;
+      } else if (shoeCandidates.isNotEmpty) {
+        shoe = _pickBestMatch(shoeCandidates, worn);
+        worn.add(shoe.colour);
+      }
 
       ClothingItem? accessory;
-      if (accessoryCandidates.isNotEmpty && _random.nextDouble() < 0.7) {
+      if (anchorSlot == OutfitSlot.accessory) {
+        accessory = anchor;
+      } else if (accessoryCandidates.isNotEmpty && _random.nextDouble() < 0.7) {
         accessory = _pickBestMatch(accessoryCandidates, worn);
       }
 
@@ -149,6 +180,7 @@ class OutfitGeneratorService {
         shoe: shoe,
         accessory: accessory,
         occasion: occasion,
+        score: _computeScore([top, bottom, shoe, accessory], desiredStyle),
       );
     }
 
@@ -159,6 +191,25 @@ class OutfitGeneratorService {
       attempts++;
     }
     return candidate;
+  }
+
+  /// 0-100 wearability score: average pairwise colour-harmony across every
+  /// item in the outfit, with a bonus when everything matches the
+  /// occasion's desired style.
+  static int _computeScore(List<ClothingItem?> slots, ClothingStyle? desiredStyle) {
+    final items = slots.whereType<ClothingItem>().toList();
+    double colourTotal = 0;
+    var pairs = 0;
+    for (var i = 0; i < items.length; i++) {
+      for (var j = i + 1; j < items.length; j++) {
+        colourTotal += _colourScore(items[i].colour, items[j].colour);
+        pairs++;
+      }
+    }
+    final avgColour = pairs == 0 ? 0.75 : colourTotal / pairs;
+    final styleMatches = desiredStyle == null || items.every((i) => i.style == desiredStyle);
+    final raw = (avgColour + (styleMatches ? 0.1 : 0.0)).clamp(0.0, 1.0);
+    return (raw * 100).round();
   }
 
   /// Picks a colour-compatible item rather than a uniformly random one.

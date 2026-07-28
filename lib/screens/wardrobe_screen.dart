@@ -4,6 +4,7 @@ import '../db/database_helper.dart';
 import '../models/clothing_item.dart';
 import '../models/wardrobe_category.dart';
 import '../widgets/category_tile.dart';
+import 'archived_items_screen.dart';
 import 'category_gallery_screen.dart';
 import 'search_screen.dart';
 import 'upload_screen.dart';
@@ -39,6 +40,16 @@ class _WardrobeScreenState extends State<WardrobeScreen> {
       appBar: AppBar(
         title: const Text('My Wardrobe'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.archive_outlined),
+            tooltip: 'Archived',
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ArchivedItemsScreen()),
+              );
+              await _reload();
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: () async {

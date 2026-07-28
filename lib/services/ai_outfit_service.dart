@@ -12,6 +12,7 @@ class AiOutfitSuggestion {
   final int? shoeId;
   final int? accessoryId;
   final String reasoning;
+  final int? score;
 
   const AiOutfitSuggestion({
     required this.topId,
@@ -19,6 +20,7 @@ class AiOutfitSuggestion {
     this.shoeId,
     this.accessoryId,
     required this.reasoning,
+    this.score,
   });
 }
 
@@ -69,6 +71,7 @@ class AiOutfitService {
         shoeId: (data['shoeId'] as num?)?.toInt(),
         accessoryId: (data['accessoryId'] as num?)?.toInt(),
         reasoning: data['reasoning'] as String? ?? '',
+        score: (data['score'] as num?)?.toInt(),
       );
     } catch (_) {
       return null;

@@ -5,11 +5,14 @@ import '../db/database_helper.dart';
 import '../models/clothing_item.dart';
 import '../models/outfit.dart';
 import '../models/outfit_history.dart';
+import '../models/wardrobe_category.dart';
 import '../services/outfit_generator.dart';
 import '../widgets/outfit_slot_card.dart';
 
 class OutfitGeneratorScreen extends StatefulWidget {
-  const OutfitGeneratorScreen({super.key});
+  final ClothingItem? anchor;
+
+  const OutfitGeneratorScreen({super.key, this.anchor});
 
   @override
   State<OutfitGeneratorScreen> createState() => _OutfitGeneratorScreenState();
@@ -24,11 +27,20 @@ class _OutfitGeneratorScreenState extends State<OutfitGeneratorScreen> {
   bool _loading = false;
   String? _error;
   bool _savedThisOutfit = false;
+  bool _loggedWornThisOutfit = false;
+  int? _persistedOutfitId;
 
   @override
   void initState() {
     super.initState();
-    _loadDefaultGender();
+    if (widget.anchor != null && widget.anchor!.gender != ClothingGender.unisex) {
+      _gender = widget.anchor!.gender;
+    } else {
+      _loadDefaultGender();
+    }
+    if (widget.anchor != null) {
+      _generate();
+    }
   }
 
   Future<void> _loadDefaultGender() async {
@@ -46,10 +58,16 @@ class _OutfitGeneratorScreenState extends State<OutfitGeneratorScreen> {
       _error = null;
     });
     try {
-      final outfit = await OutfitGeneratorService.generateSmart(_occasion, _gender);
+      final outfit = await OutfitGeneratorService.generateSmart(
+        _occasion,
+        _gender,
+        anchor: widget.anchor,
+      );
       setState(() {
         _outfit = outfit;
         _savedThisOutfit = false;
+        _loggedWornThisOutfit = false;
+        _persistedOutfitId = null;
       });
     } on NotEnoughItemsException catch (e) {
       setState(() {
@@ -61,23 +79,41 @@ class _OutfitGeneratorScreenState extends State<OutfitGeneratorScreen> {
     }
   }
 
-  Future<void> _saveFavourite() async {
-    final o = _outfit;
-    if (o == null) return;
-    final outfit = Outfit(
+  Future<int> _ensurePersisted({bool favourite = false}) async {
+    final o = _outfit!;
+    if (_persistedOutfitId != null) {
+      if (favourite && !_savedThisOutfit) {
+        await DatabaseHelper.instance.updateOutfit(Outfit(
+          id: _persistedOutfitId,
+          name: '${o.occasion.label} outfit',
+          topId: o.top.id!,
+          bottomId: o.bottom?.id,
+          shoeId: o.shoe?.id,
+          accessoryId: o.accessory?.id,
+          occasion: o.occasion,
+          favourite: true,
+          dateCreated: DateTime.now(),
+        ));
+      }
+      return _persistedOutfitId!;
+    }
+    final id = await DatabaseHelper.instance.insertOutfit(Outfit(
       name: '${o.occasion.label} outfit',
       topId: o.top.id!,
       bottomId: o.bottom?.id,
       shoeId: o.shoe?.id,
       accessoryId: o.accessory?.id,
       occasion: o.occasion,
-      favourite: true,
+      favourite: favourite,
       dateCreated: DateTime.now(),
-    );
-    final id = await DatabaseHelper.instance.insertOutfit(outfit);
-    await DatabaseHelper.instance.insertHistoryEntry(
-      OutfitHistoryEntry(outfitId: id, date: DateTime.now()),
-    );
+    ));
+    _persistedOutfitId = id;
+    return id;
+  }
+
+  Future<void> _saveFavourite() async {
+    if (_outfit == null) return;
+    await _ensurePersisted(favourite: true);
     setState(() => _savedThisOutfit = true);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -85,26 +121,44 @@ class _OutfitGeneratorScreenState extends State<OutfitGeneratorScreen> {
     );
   }
 
+  Future<void> _markWorn() async {
+    if (_outfit == null) return;
+    final id = await _ensurePersisted();
+    await DatabaseHelper.instance.insertHistoryEntry(
+      OutfitHistoryEntry(outfitId: id, date: DateTime.now()),
+    );
+    setState(() => _loggedWornThisOutfit = true);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Marked as worn today')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Generate Outfit')),
+      appBar: AppBar(
+        title: Text(widget.anchor != null ? 'Match: ${widget.anchor!.colour} ${widget.anchor!.category.label}' : 'Generate Outfit'),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final g in [ClothingGender.women, ClothingGender.men])
-                  ChoiceChip(
-                    label: Text(g.label),
-                    selected: _gender == g,
-                    onSelected: (_) => setState(() => _gender = g),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
+            if (widget.anchor == null) ...[
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final g in [ClothingGender.women, ClothingGender.men])
+                    ChoiceChip(
+                      label: Text(g.label),
+                      selected: _gender == g,
+                      onSelected: (_) => setState(() => _gender = g),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
             Wrap(
               spacing: 8,
               children: [
@@ -135,6 +189,8 @@ class _OutfitGeneratorScreenState extends State<OutfitGeneratorScreen> {
                             : SingleChildScrollView(
                                 child: Column(
                                   children: [
+                                    _ScoreBadge(score: _outfit!.score),
+                                    const SizedBox(height: 16),
                                     Wrap(
                                       spacing: 16,
                                       runSpacing: 16,
@@ -176,7 +232,7 @@ class _OutfitGeneratorScreenState extends State<OutfitGeneratorScreen> {
                                           children: [
                                             Icon(Icons.auto_awesome,
                                                 size: 16,
-                                                color: Theme.of(context).colorScheme.primary),
+                                                color: colorScheme.primary),
                                             const SizedBox(width: 8),
                                             Flexible(
                                               child: Text(
@@ -209,6 +265,14 @@ class _OutfitGeneratorScreenState extends State<OutfitGeneratorScreen> {
                 if (_outfit != null) ...[
                   const SizedBox(width: 12),
                   IconButton.filledTonal(
+                    onPressed: _loggedWornThisOutfit ? null : _markWorn,
+                    icon: Icon(
+                      _loggedWornThisOutfit ? Icons.check_circle : Icons.check_circle_outline,
+                    ),
+                    tooltip: 'Mark as worn today',
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
                     onPressed: _savedThisOutfit ? null : _saveFavourite,
                     icon: Icon(
                       _savedThisOutfit ? Icons.favorite : Icons.favorite_outline,
@@ -220,6 +284,43 @@ class _OutfitGeneratorScreenState extends State<OutfitGeneratorScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _ScoreBadge extends StatelessWidget {
+  final int score;
+
+  const _ScoreBadge({required this.score});
+
+  Color _colourFor(ColorScheme scheme) {
+    if (score >= 75) return scheme.primary;
+    if (score >= 50) return scheme.secondary;
+    return scheme.error;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final colour = _colourFor(colorScheme);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: colour.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: colour.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.star_rounded, size: 18, color: colour),
+          const SizedBox(width: 6),
+          Text(
+            '$score/100 wearability',
+            style: TextStyle(color: colour, fontWeight: FontWeight.w600),
+          ),
+        ],
       ),
     );
   }

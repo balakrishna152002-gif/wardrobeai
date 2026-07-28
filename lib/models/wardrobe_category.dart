@@ -1,3 +1,5 @@
+enum OutfitSlot { top, bottom, shoe, accessory }
+
 enum WardrobeCategory {
   tops,
   jeans,
@@ -89,4 +91,18 @@ extension WardrobeCategoryX on WardrobeCategory {
         WardrobeCategory.pants,
         WardrobeCategory.shorts,
       ];
+
+  /// Which outfit-generator slot this category can anchor, or null if the
+  /// category (e.g. jackets) isn't used by the generator at all yet.
+  OutfitSlot? get outfitSlot {
+    if (topSlot.contains(this)) return OutfitSlot.top;
+    if (bottomSlot.contains(this)) return OutfitSlot.bottom;
+    if (this == WardrobeCategory.shoes) return OutfitSlot.shoe;
+    if (this == WardrobeCategory.caps ||
+        this == WardrobeCategory.bags ||
+        this == WardrobeCategory.accessories) {
+      return OutfitSlot.accessory;
+    }
+    return null;
+  }
 }

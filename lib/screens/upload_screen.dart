@@ -76,14 +76,46 @@ class _UploadScreenState extends State<UploadScreen> {
 
   Future<void> _save() async {
     if (_imageFile == null) return;
+    final colour = _colourCtrl.text.trim().isEmpty ? 'Unknown' : _colourCtrl.text.trim();
+    final pattern = _patternCtrl.text.trim().isEmpty ? 'Solid' : _patternCtrl.text.trim();
+
+    final isDuplicate = await DatabaseHelper.instance.hasSimilarClothingItem(
+      categoryKey: _category!.dbKey,
+      colour: colour,
+      pattern: pattern,
+    );
+    if (isDuplicate && mounted) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Similar item found'),
+          content: Text(
+            'You already have a $colour $pattern ${_category!.label.toLowerCase()} '
+            'in your wardrobe. Add this one anyway?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Add anyway'),
+            ),
+          ],
+        ),
+      );
+      if (proceed != true) return;
+    }
+
     setState(() => _saving = true);
     try {
       final persisted = await ImageStore.persist(_imageFile!);
       final item = ClothingItem(
         category: _category!,
         imagePath: persisted.path,
-        colour: _colourCtrl.text.trim().isEmpty ? 'Unknown' : _colourCtrl.text.trim(),
-        pattern: _patternCtrl.text.trim().isEmpty ? 'Solid' : _patternCtrl.text.trim(),
+        colour: colour,
+        pattern: pattern,
         sleeveLength: _category!.hasSleeves ? (_sleeveLength ?? 'Short') : null,
         season: _season ?? ClothingSeason.allSeason,
         style: _style ?? ClothingStyle.casual,

@@ -1,10 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../db/database_helper.dart';
 import '../models/clothing_item.dart';
 import '../models/wardrobe_category.dart';
+import '../services/image_store.dart';
+import 'outfit_generator_screen.dart';
 
 class ItemDetailScreen extends StatefulWidget {
   final ClothingItem item;
@@ -23,7 +26,10 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   late ClothingStyle _style;
   late ClothingGender _gender;
   late bool _favourite;
+  late bool _archived;
   bool _saving = false;
+
+  List<Map<String, Object?>> _extraPhotos = [];
 
   @override
   void initState() {
@@ -35,6 +41,14 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     _style = widget.item.style;
     _gender = widget.item.gender;
     _favourite = widget.item.favourite;
+    _archived = widget.item.archived;
+    _loadExtraPhotos();
+  }
+
+  Future<void> _loadExtraPhotos() async {
+    final rows = await DatabaseHelper.instance.getExtraPhotoRows(widget.item.id!);
+    if (!mounted) return;
+    setState(() => _extraPhotos = rows);
   }
 
   @override
@@ -55,6 +69,7 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       style: _style,
       gender: _gender,
       favourite: _favourite,
+      archived: _archived,
     );
     await DatabaseHelper.instance.updateClothingItem(updated);
     if (!mounted) return;
@@ -85,12 +100,70 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
     Navigator.of(context).pop();
   }
 
+  Future<void> _addExtraPhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Take a photo'),
+              onTap: () => Navigator.of(context).pop(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      imageQuality: 85,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
+    if (picked == null) return;
+
+    final persisted = await ImageStore.persist(File(picked.path));
+    await DatabaseHelper.instance.addExtraPhoto(widget.item.id!, persisted.path);
+    await _loadExtraPhotos();
+  }
+
+  Future<void> _deleteExtraPhoto(int rowId) async {
+    await DatabaseHelper.instance.deleteExtraPhoto(rowId);
+    await _loadExtraPhotos();
+  }
+
+  Future<void> _matchFromThisItem() async {
+    if (widget.item.category.outfitSlot == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Matching from this category isn't supported yet.")),
+      );
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => OutfitGeneratorScreen(anchor: widget.item)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.item.category.label),
         actions: [
+          IconButton(
+            icon: Icon(_archived ? Icons.unarchive_outlined : Icons.archive_outlined),
+            tooltip: _archived ? 'Unarchive' : 'Archive',
+            onPressed: () => setState(() => _archived = !_archived),
+          ),
           IconButton(
             icon: Icon(
               _favourite ? Icons.favorite : Icons.favorite_outline,
@@ -107,6 +180,29 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (_archived)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: colorScheme.secondaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.archive_outlined, size: 16, color: colorScheme.onSecondaryContainer),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Archived - hidden from your wardrobe and outfit generation.',
+                        style: TextStyle(color: colorScheme.onSecondaryContainer, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: AspectRatio(
@@ -115,11 +211,76 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
                 File(widget.item.imagePath),
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stack) => Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  color: colorScheme.surfaceContainerHighest,
                   child: const Icon(Icons.broken_image_outlined, size: 48),
                 ),
               ),
             ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 72,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final row in _extraPhotos)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(
+                            File(row['image_path'] as String),
+                            width: 72,
+                            height: 72,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stack) => Container(
+                              width: 72,
+                              height: 72,
+                              color: colorScheme.surfaceContainerHighest,
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          right: 2,
+                          top: 2,
+                          child: GestureDetector(
+                            onTap: () => _deleteExtraPhoto(row['id'] as int),
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: const BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.close, size: 14, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                GestureDetector(
+                  onTap: _addExtraPhoto,
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: colorScheme.outline),
+                    ),
+                    child: Icon(Icons.add_a_photo_outlined, color: colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _matchFromThisItem,
+            icon: const Icon(Icons.auto_awesome),
+            label: const Text('Match an outfit from this item'),
           ),
           const SizedBox(height: 20),
           TextField(

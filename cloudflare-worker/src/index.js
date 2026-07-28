@@ -60,13 +60,14 @@ Wardrobe items:
 ${wardrobeList}
 
 Respond with strict JSON only, no markdown, matching this shape:
-{"topId": number, "bottomId": number|null, "shoeId": number|null, "accessoryId": number|null, "reasoning": string}
+{"topId": number, "bottomId": number|null, "shoeId": number|null, "accessoryId": number|null, "reasoning": string, "score": number}
 
 Rules:
 - topId must reference a "tops" or "dresses" item id from the list.
 - If topId is a "dresses" item, bottomId must be null.
 - Only use ids that exist in the wardrobe list above.
-- reasoning should be 1-2 short sentences explaining the colour/style choice.`;
+- reasoning should be 1-2 short sentences explaining the colour/style choice.
+- score is a 0-100 "wearability" rating for this specific combination, judged on colour harmony, occasion fit, and style consistency. Be a genuinely critical judge - a mismatched or clashing combination should score low (well under 50), not just default to a high number.`;
 
     const groqResponse = await fetch(
       "https://api.groq.com/openai/v1/chat/completions",
