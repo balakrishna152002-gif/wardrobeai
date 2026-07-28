@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'screens/splash_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(const WardrobeAiApp());
@@ -11,22 +12,11 @@ class WardrobeAiApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF6750A4);
     return MaterialApp(
       title: 'WardrobeAI',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: seed),
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(centerTitle: false),
-      ),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
       home: const SplashScreen(),
     );
   }
